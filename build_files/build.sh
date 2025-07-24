@@ -10,7 +10,10 @@ set -ouex pipefail
 # https://mirrors.rpmfusion.org/mirrorlist?path=free/fedora/updates/39/x86_64/repoview/index.html&protocol=https&redirect=1
 
 # this installs a package from fedora repos
-dnf5 install -y papirus-icon-theme foot ripgrep fd-find
+dnf5 install -y \
+  ansible \
+  foot \
+  papirus-icon-theme
 
 # Use a COPR Example:
 #
