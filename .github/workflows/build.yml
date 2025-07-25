@@ -57,8 +57,17 @@ jobs:
         id: current_state
         run: |
           echo "git_commit=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
-          ostree_commit=$(skopeo inspect docker://ghcr.io/ublue-os/bluefin-dx:gts | jq -r '.Labels["org.centos.stream.ostree.commit"] // .Labels["ostree.commit"]')
+
+          base_image=$(grep -E '^FROM ghcr\.io' ./Containerfile | head -n1 | awk '{print $2}')
+          echo "Base image: $base_image"
+
+          ostree_commit=$(skopeo inspect "docker://$base_image" | jq -r '.Labels["org.centos.stream.ostree.commit"] // .Labels["ostree.commit"]')
           echo "ostree_commit=$ostree_commit" >> $GITHUB_OUTPUT
+
+          if [ -z "$ostree_commit" ]; then
+            echo "❌ Failed to extract OSTree commit from base image: $base_image"
+            exit 1
+          fi
 
       - name: Restore last build state
         if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
