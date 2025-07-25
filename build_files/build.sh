@@ -25,19 +25,19 @@ dnf5 install -y \
 
 # }}}
 
-#### Enable a System Unit File {{{
+### Enable a System Unit File {{{
 
 # systemctl enable podman.socket
 
 # }}}
 
-#### Nix dir setup {{{
+### Nix dir setup {{{
 # See https://github.com/DeterminateSystems/nix-installer/issues/1445
 install -d -m 0755 /nix
 
 # }}}
 
-#### Cleanup {{{
+### Cleanup {{{
 
 # Clean package manager cache
 dnf5 clean all
