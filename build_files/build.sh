@@ -1,8 +1,9 @@
 #!/bin/bash
+# vim:foldmethod=marker:foldlevel=0
 
 set -ouex pipefail
 
-### Install packages
+### Install packages {{{
 
 # Packages can be installed from any enabled yum repo on the image.
 # RPMfusion repos are available by default in ublue main images
@@ -22,9 +23,33 @@ dnf5 install -y \
 # Disable COPRs so they don't end up enabled on the final image:
 # dnf5 -y copr disable ublue-os/staging
 
-#### Example for enabling a System Unit File
+# }}}
+
+#### Enable a System Unit File {{{
 
 # systemctl enable podman.socket
 
-#### Nix dir setup
-mkdir /nix
+# }}}
+
+#### Nix dir setup {{{
+# See https://github.com/DeterminateSystems/nix-installer/issues/1445
+install -d -m 0755 /nix
+
+# }}}
+
+#### Cleanup {{{
+
+# Clean package manager cache
+dnf5 clean all
+
+# Clean temporary files
+rm -rf /tmp/*
+# shellcheck disable=SC2115
+rm -rf /var/*
+rm -rf /usr/etc
+
+# Restore and setup directories
+mkdir -p /tmp
+install -d /var/tmp -m 1777 /var/tmp
+
+# }}}
