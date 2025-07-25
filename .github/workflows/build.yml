@@ -66,6 +66,8 @@ jobs:
           ostree_commit=$(skopeo inspect "docker://$base_image" | jq -r '.Labels["org.centos.stream.ostree.commit"] // .Labels["ostree.commit"]')
           echo "ostree_commit=$ostree_commit" >> $GITHUB_OUTPUT
 
+          echo '{"git_commit": "$git_commit", "base_commit": "$ostree_commit"}' > .curr-build-info.json
+
           if [ -z "$ostree_commit" ]; then
             echo "❌ Failed to extract OSTree commit from base image: $base_image"
             exit 1
@@ -77,20 +79,17 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .last-build-info.json
-          key: build-inputs
-          restore-keys: |
-            build-inputs
+          key: build-state-${{ hashFiles('.curr-build-info.json') }}
 
-      - name: Check for changes
+      - name: Compare build states
         if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         id: changes_check
         run: |
-          # If cache didn't exist, force build
           if [ ! -f .last-build-info.json ]; then
-            echo "changed=true" >> $GITHUB_OUTPUT
             exit 0
           fi
 
+          # Git and ostree commits should be the same
           LAST_GIT=$(jq -r .git_commit < .last-build-info.json)
           LAST_BASE=$(jq -r .base_commit < .last-build-info.json)
 
@@ -99,16 +98,12 @@ jobs:
           echo "Last Base: $LAST_BASE"
           echo "Current:   ${{ steps.current_state.outputs.ostree_commit }}"
 
-          if [ "$LAST_GIT" != "${{ steps.current_state.outputs.git_commit }}" ] || [ "$LAST_BASE" != "${{ steps.current_state.outputs.ostree_commit }}" ]; then
-            echo "changed=true" >> $GITHUB_OUTPUT
-          else
-            echo "changed=false" >> $GITHUB_OUTPUT
-          fi
 
       - name: Check if skipping build
         id: should_build
         run: |
-          if [ "${{ steps.changes_check.outputs.changed }}" == "false" ]; then
+          # Cache was hit, so we don't need to rebuild
+          if [ -f .last-build-info.json ]; then
             echo "should_build=false" >> $GITHUB_OUTPUT
             echo "✅ No changes detected. Skipping build."
           else
@@ -256,10 +251,3 @@ jobs:
         if: steps.push.outcome == 'success'
         run: |
           echo '{"git_commit": "${{ steps.current_state.outputs.git_commit }}", "base_commit": "${{ steps.current_state.outputs.ostree_commit }}"}' > .last-build-info.json
-
-      - name: Save updated build input file to cache
-        if: steps.push.outcome == 'success'
-        uses: actions/cache/save@v4
-        with:
-          path: .last-build-info.json
-          key: build-inputs-${{ github.run_id }}
