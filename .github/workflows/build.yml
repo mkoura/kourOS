@@ -23,24 +23,12 @@ env:
 
 concurrency:
   # Don't let PR merge cancel the build
-  group: >-
-    ${{
-      contains(github.event.head_commit.message, 'Merge pull request')
-        && format('skip-concurrency-{0}', github.run_id)
-        || format(
-            '{0}-{1}-{2}-{3}',
-            github.workflow,
-            github.ref || github.run_id,
-            inputs.brand_name || 'nobrand',
-            inputs.stream_name || 'nostream'
-          )
-    }}
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}-${{ inputs.brand_name}}-${{ inputs.stream_name }}
   cancel-in-progress: true
 
 jobs:
   build_push:
     name: Build and push image
-    if: "!contains(github.event.head_commit.message, 'Merge pull request')"  # Don't rebuild on PR merge
     runs-on: ubuntu-24.04
 
     permissions:
