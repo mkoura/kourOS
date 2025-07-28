@@ -6,11 +6,6 @@ on:
       - main
   schedule:
     - cron: '05 10 * * *'  # 10:05am UTC everyday
-  push:
-    branches:
-      - main
-    paths-ignore:
-      - '**/README.md'
   workflow_dispatch:
 
 env:
@@ -66,7 +61,8 @@ jobs:
           ostree_commit=$(skopeo inspect "docker://$base_image" | jq -r '.Labels["org.centos.stream.ostree.commit"] // .Labels["ostree.commit"]')
           echo "ostree_commit=$ostree_commit" >> $GITHUB_OUTPUT
 
-          echo '{"git_commit": "$git_commit", "base_commit": "$ostree_commit"}' > .curr-build-info.json
+          # Build and push only when base commit changed
+          echo '{"base_commit": "$ostree_commit"}' > .curr-base-commit.json
 
           if [ -z "$ostree_commit" ]; then
             echo "❌ Failed to extract OSTree commit from base image: $base_image"
@@ -79,9 +75,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .last-build-info.json
-          key: build-state-${{ hashFiles('.curr-build-info.json') }}
+          key: build-state-${{ hashFiles('.curr-base-commit.json') }}
 
-      - name: Compare build states
+      - name: Compare with last build state
         if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         id: changes_check
         run: |
@@ -102,10 +98,13 @@ jobs:
       - name: Check if skipping build
         id: should_build
         run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "👋 This workflow was triggered manually. Building."
           # Cache was hit, so we don't need to rebuild
-          if [ -f .last-build-info.json ]; then
+          elif [ -f .last-build-info.json ]; then
             echo "should_build=false" >> $GITHUB_OUTPUT
-            echo "✅ No changes detected. Skipping build."
+            echo "✅ No changes to base image detected. Skipping build."
           else
             echo "should_build=true" >> $GITHUB_OUTPUT
           fi
