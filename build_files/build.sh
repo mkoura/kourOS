@@ -10,18 +10,30 @@ set -ouex pipefail
 # List of rpmfusion packages can be found here:
 # https://mirrors.rpmfusion.org/mirrorlist?path=free/fedora/updates/39/x86_64/repoview/index.html&protocol=https&redirect=1
 
-# this installs a package from fedora repos
-dnf5 install -y \
-  ansible \
-  foot \
-  papirus-icon-theme
-
 # Use a COPR Example:
 #
 # dnf5 -y copr enable ublue-os/staging
 # dnf5 -y install package
 # Disable COPRs so they don't end up enabled on the final image:
 # dnf5 -y copr disable ublue-os/staging
+
+LAYERED_PACKAGES=(
+  ansible
+  foot
+  papirus-icon-theme
+)
+
+case "$TAG" in
+  workstation)
+    dnf5 -y copr enable gsauthof/dracut-sshd
+    dnf5 install --setopt=install_weak_deps=False -y "${LAYERED_PACKAGES[@]}" dracut-sshd
+    dnf5 -y copr disable gsauthof/dracut-sshd
+    ;;
+  *)
+    dnf5 install --setopt=install_weak_deps=False -y "${LAYERED_PACKAGES[@]}"
+esac
+
+ostree container commit
 
 # }}}
 
@@ -34,6 +46,24 @@ dnf5 install -y \
 ### Nix dir setup {{{
 # See https://github.com/DeterminateSystems/nix-installer/issues/1445
 install -d -m 0755 /nix
+
+# }}}
+
+### Generate initramfs {{{
+
+case "$TAG" in
+  workstation)
+    # Cannot do initramfs generation with dracut-sshd at this point, because SSH host key
+    # doesn't exist yet. Therefore it's commented out.
+    #
+    # KERNEL_VERSION="$(rpm -q --queryformat="%{EVR}.%{ARCH}" kernel-core)"
+    #
+    # export DRACUT_NO_XATTR=1
+    # /usr/bin/dracut --no-hostonly --kver "$KERNEL_VERSION" --reproducible --zstd -v --add ostree -f "/lib/modules/$KERNEL_VERSION/initramfs.img"
+    #
+    # chmod 0600 /lib/modules/"$KERNEL_VERSION"/initramfs.img
+    # ostree container commit
+esac
 
 # }}}
 

@@ -1,4 +1,4 @@
-export image_name := env("IMAGE_NAME", "image-template")
+export image_name := env("IMAGE_NAME", "kourOS")
 export default_tag := env("DEFAULT_TAG", "latest")
 export bib_image := env("BIB_IMAGE", "quay.io/centos-bootc/bootc-image-builder:latest")
 
@@ -93,6 +93,8 @@ build $target_image=image_name $tag=default_tag:
     if [[ -z "$(git status -s)" ]]; then
         BUILD_ARGS+=("--build-arg" "SHA_HEAD_SHORT=$(git rev-parse --short HEAD)")
     fi
+
+    BUILD_ARGS+=("--build-arg" "TAG=${tag}")
 
     podman build \
         "${BUILD_ARGS[@]}" \

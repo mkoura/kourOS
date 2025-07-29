@@ -1,12 +1,10 @@
 ---
 name: Build container image
 on:
-  pull_request:
-    branches:
-      - main
-  schedule:
-    - cron: '05 10 * * *'  # 10:05am UTC everyday
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      image_flavor:
+        type: string
 
 env:
   IMAGE_DESC: "kourOS Customized Bluefin Image"
@@ -14,15 +12,15 @@ env:
   IMAGE_LOGO_URL: "https://avatars.githubusercontent.com/u/120078124?s=200&v=4"  # Put your own image here for a fancy profile on https://artifacthub.io/!
   IMAGE_NAME: "${{ github.event.repository.name }}"  # Output image name, usually same as repo name
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"  # Do not edit
-  DEFAULT_TAG: "latest"
+  DEFAULT_TAG: "${{ inputs.image_flavor || 'latest' }}"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}-${{ inputs.brand_name}}-${{ inputs.stream_name }}
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}-${{ inputs.image_flavor }}
   cancel-in-progress: true
 
 jobs:
   build_push:
-    name: Build and push image
+    name: Build and push ${{ inputs.image_flavor || 'latest' }} image
     runs-on: ubuntu-24.04
 
     permissions:
@@ -209,6 +207,8 @@ jobs:
           image: ${{ env.IMAGE_NAME }}
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
+          build-args: |
+            TAG=${{ env.DEFAULT_TAG }}
           oci: false
 
       # Rechunk is a script that we use on Universal Blue to make sure there isnt a single huge layer when your image gets published.
