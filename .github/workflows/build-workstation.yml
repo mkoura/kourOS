@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   build_image:
-    uses: ./.github/workflows/build.yml
+    uses: ./.github/reusable/build-image.yml
     secrets: inherit
     with:
       image_flavor: workstation
