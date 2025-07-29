@@ -1,5 +1,5 @@
 ---
-name: Build container image
+name: Reusable container image build
 on:
   workflow_call:
     inputs:
@@ -173,7 +173,6 @@ jobs:
           tags: |
             type=raw,value=${{ env.DEFAULT_TAG }}
             type=raw,value=${{ env.DEFAULT_TAG }}.{{date 'YYYYMMDD'}}
-            type=raw,value={{date 'YYYYMMDD'}}
             type=sha,enable=${{ github.event_name == 'pull_request' }}
             type=ref,event=pr
           labels: |
