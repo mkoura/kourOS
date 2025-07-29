@@ -1,5 +1,5 @@
 ---
-name: Build container image
+name: Reusable container image build
 on:
   workflow_call:
     inputs:
