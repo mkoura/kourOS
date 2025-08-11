@@ -51,16 +51,19 @@ jobs:
         if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         id: current_state
         run: |
-          echo "git_commit=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+          git_commit="$(git rev-parse HEAD)"
+          echo "git_commit=$git_commit" >> $GITHUB_OUTPUT
 
-          base_image=$(grep -E '^FROM ghcr\.io' ./Containerfile | head -n1 | awk '{print $2}')
+          base_image="$(grep -E '^FROM ghcr\.io' ./Containerfile | head -n1 | awk '{print $2}')"
           echo "Base image: $base_image"
 
           ostree_commit=$(skopeo inspect "docker://$base_image" | jq -r '.Labels["org.centos.stream.ostree.commit"] // .Labels["ostree.commit"]')
           echo "ostree_commit=$ostree_commit" >> $GITHUB_OUTPUT
 
-          # Build and push only when base commit changed
+          # Build and push only when base ostree commit changed
           echo "{\"base_commit\": \"$ostree_commit\"}" > .curr-base-commit.json
+          # Or build and push when either git commit or base ostree commit changed
+          # echo "{\"git_commit\": \"$git_commit\", \"base_commit\": \"$ostree_commit\"}" > .curr-base-commit.json
 
           if [ -z "$ostree_commit" ]; then
             echo "❌ Failed to extract OSTree commit from base image: $base_image"
