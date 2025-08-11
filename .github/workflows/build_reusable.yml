@@ -15,7 +15,7 @@ env:
   DEFAULT_TAG: "${{ inputs.image_flavor || 'latest' }}"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}-${{ inputs.image_flavor }}
+  group: ${{ inputs.image_flavor || 'latest' }}-${{ github.ref || github.run_id }}-${{ inputs.image_flavor }}
   cancel-in-progress: true
 
 jobs:
@@ -73,7 +73,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .last-build-info.json
-          key: build-state-${{ hashFiles('.curr-base-commit.json') }}
+          key: build-state-${{ inputs.image_flavor || 'latest' }}-${{ hashFiles('.curr-base-commit.json') }}
 
       - name: Compare with last build state
         if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
