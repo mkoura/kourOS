@@ -60,7 +60,7 @@ jobs:
           echo "ostree_commit=$ostree_commit" >> $GITHUB_OUTPUT
 
           # Build and push only when base commit changed
-          echo '{"base_commit": "$ostree_commit"}' > .curr-base-commit.json
+          echo "{\"base_commit\": \"$ostree_commit\"}" > .curr-base-commit.json
 
           if [ -z "$ostree_commit" ]; then
             echo "❌ Failed to extract OSTree commit from base image: $base_image"
