@@ -1,4 +1,4 @@
-export image_name := env("IMAGE_NAME", "kourOS")
+export image_name := env("IMAGE_NAME", "kouros")
 export default_tag := env("DEFAULT_TAG", "latest")
 export bib_image := env("BIB_IMAGE", "quay.io/centos-bootc/bootc-image-builder:latest")
 
@@ -94,12 +94,13 @@ build $target_image=image_name $tag=default_tag:
         BUILD_ARGS+=("--build-arg" "SHA_HEAD_SHORT=$(git rev-parse --short HEAD)")
     fi
 
-    BUILD_ARGS+=("--build-arg" "TAG=${tag}")
+    BUILD_ARGS+=("--cpp-flag=-D${tag}")
 
     podman build \
         "${BUILD_ARGS[@]}" \
         --pull=newer \
         --tag "${target_image}:${tag}" \
+        --file Containerfile.in \
         .
 
 # Command: _rootful_load_image
