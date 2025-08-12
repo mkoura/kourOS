@@ -3,6 +3,8 @@
 
 set -ouex pipefail
 
+TAG="${1:?"Tag needs to be provided"}"
+
 ### Install packages {{{
 
 # Packages can be installed from any enabled yum repo on the image.
