@@ -21,18 +21,45 @@ TAG="${1:?"Tag needs to be provided"}"
 
 LAYERED_PACKAGES=(
   ansible
+  bat
+  fd-find
   foot
+  fzf
+  mc
+  neovim
+  nmap
   papirus-icon-theme
+  tcpdump
+  tmux
+  wireshark
+  wireshark-cli
+  zoxide
+)
+
+LAYERED_PACKAGES_LAPTOP=(
+  kismet
+)
+
+LAYERED_PACKAGES_WORKSTATION=(
+  dracut-sshd
 )
 
 case "$TAG" in
+  laptop)
+    dnf5 install --setopt=install_weak_deps=False -y "${LAYERED_PACKAGES[@]}" "${LAYERED_PACKAGES_LAPTOP[@]}"
+    ;;
   workstation)
     dnf5 -y copr enable gsauthof/dracut-sshd
-    dnf5 install --setopt=install_weak_deps=False -y "${LAYERED_PACKAGES[@]}" dracut-sshd
+    dnf5 install --setopt=install_weak_deps=False -y "${LAYERED_PACKAGES[@]}" "${LAYERED_PACKAGES_WORKSTATION[@]}"
     dnf5 -y copr disable gsauthof/dracut-sshd
     ;;
-  *)
+  silverblue)
     dnf5 install --setopt=install_weak_deps=False -y "${LAYERED_PACKAGES[@]}"
+    ;;
+  *)
+    echo "Unknown tag: $TAG" >&2
+    exit 1
+    ;;
 esac
 
 ostree container commit

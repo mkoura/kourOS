@@ -7,20 +7,20 @@ on:
         type: string
 
 env:
-  IMAGE_DESC: "kourOS Customized Bluefin Image"
+  IMAGE_DESC: "kourOS Customized Universal Blue Image"
   IMAGE_KEYWORDS: "bootc,ublue,universal-blue,bluefin"
   IMAGE_LOGO_URL: "https://avatars.githubusercontent.com/u/120078124?s=200&v=4"  # Put your own image here for a fancy profile on https://artifacthub.io/!
   IMAGE_NAME: "${{ github.event.repository.name }}"  # Output image name, usually same as repo name
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"  # Do not edit
-  DEFAULT_TAG: "${{ inputs.image_flavor || 'latest' }}"
+  DEFAULT_TAG: "${{ inputs.image_flavor || 'laptop' }}"
 
 concurrency:
-  group: ${{ inputs.image_flavor || 'latest' }}-${{ github.ref || github.run_id }}-${{ inputs.image_flavor }}
+  group: ${{ inputs.image_flavor || 'laptop' }}-${{ github.ref || github.run_id }}-${{ inputs.image_flavor }}
   cancel-in-progress: true
 
 jobs:
   build_push:
-    name: Build and push ${{ inputs.image_flavor || 'latest' }} image
+    name: Build and push ${{ inputs.image_flavor || 'laptop' }} image
     runs-on: ubuntu-24.04
 
     permissions:
@@ -40,7 +40,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Preprocess Containerfile.in
-        run: cpp -P -D${{ env.DEFAULT_TAG }} Containerfile.in -o Containerfile
+        run: cpp -P -DCPP_${{ env.DEFAULT_TAG }} Containerfile.in -o Containerfile
 
       - name: Install skopeo and jq
         if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
@@ -79,7 +79,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .last-build-info.json
-          key: build-state-${{ inputs.image_flavor || 'latest' }}-${{ hashFiles('.curr-base-commit.json') }}
+          key: build-state-${{ inputs.image_flavor || 'laptop' }}-${{ hashFiles('.curr-base-commit.json') }}
 
       - name: Compare with last build state
         if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)

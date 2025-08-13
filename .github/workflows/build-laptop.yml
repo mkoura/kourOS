@@ -1,5 +1,5 @@
 ---
-name: Build latest container image
+name: Build laptop container image
 on:
   pull_request:
     branches:
@@ -18,4 +18,4 @@ jobs:
     uses: ./.github/workflows/build_reusable.yml
     secrets: inherit
     with:
-      image_flavor: latest
+      image_flavor: laptop

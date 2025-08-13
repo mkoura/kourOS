@@ -1,0 +1,21 @@
+---
+name: Build silverblue container image
+on:
+  # pull_request:
+  #   branches:
+  #     - main
+  # schedule:
+  #   - cron: '12 12 * * *'  # 12:12 UTC everyday
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  build_image:
+    uses: ./.github/workflows/build_reusable.yml
+    secrets: inherit
+    with:
+      image_flavor: silverblue
