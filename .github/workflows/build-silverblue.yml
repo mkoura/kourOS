@@ -1,11 +1,11 @@
 ---
 name: Build silverblue container image
 on:
-  pull_request:
-    branches:
-      - main
-  schedule:
-    - cron: '12 12 * * *'  # 12:12 UTC everyday
+  # pull_request:
+  #   branches:
+  #     - main
+  # schedule:
+  #   - cron: '12 12 * * *'  # 12:12 UTC everyday
   workflow_dispatch:
 
 permissions:
