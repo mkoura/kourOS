@@ -10,11 +10,20 @@ on:
         default: false
         type: boolean
       platform:
+        description: "Platform"
         required: true
         type: choice
         options:
           - amd64
           - arm64
+      image-flavor:
+        description: "Image flavor"
+        required: true
+        type: choice
+        options:
+          - laptop
+          - workstation
+          - silverblue
   pull_request:
     branches:
       - main
@@ -26,7 +35,7 @@ on:
 env:
   IMAGE_NAME: ${{ github.event.repository.name }} # output of build.yml, keep in sync
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"  # do not edit
-  DEFAULT_TAG: "latest"
+  DEFAULT_TAG:  ${{ inputs.image-flavor }}
   BIB_IMAGE: "ghcr.io/lorbuschris/bootc-image-builder:20250608" # "quay.io/centos-bootc/bootc-image-builder:latest" - see https://github.com/osbuild/bootc-image-builder/pull/954
 
 concurrency:
