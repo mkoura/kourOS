@@ -1,5 +1,5 @@
 export image_name := env("IMAGE_NAME", "kouros")
-export default_tag := env("DEFAULT_TAG", "latest")
+export default_tag := env("DEFAULT_TAG", "laptop")
 export bib_image := env("BIB_IMAGE", "quay.io/centos-bootc/bootc-image-builder:latest")
 
 alias build-vm := build-qcow2
@@ -94,7 +94,7 @@ build $target_image=image_name $tag=default_tag:
         BUILD_ARGS+=("--build-arg" "SHA_HEAD_SHORT=$(git rev-parse --short HEAD)")
     fi
 
-    BUILD_ARGS+=("--cpp-flag=-D${tag}")
+    BUILD_ARGS+=("--cpp-flag=-DCPP_${tag}")
 
     podman build \
         "${BUILD_ARGS[@]}" \
