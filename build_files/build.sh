@@ -21,12 +21,19 @@ TAG="${1:?"Tag needs to be provided"}"
 
 LAYERED_PACKAGES=(
   ansible
+  bat
+  fd-find
   foot
+  fzf
+  mc
+  neovim
   nmap
   papirus-icon-theme
   tcpdump
+  tmux
   wireshark
   wireshark-cli
+  zoxide
 )
 
 LAYERED_PACKAGES_LAPTOP=(
@@ -35,16 +42,6 @@ LAYERED_PACKAGES_LAPTOP=(
 
 LAYERED_PACKAGES_WORKSTATION=(
   dracut-sshd
-)
-
-LAYERED_PACKAGES_SILVERBLUE=(
-  bat
-  fd-find
-  fzf
-  mc
-  neovim
-  tmux
-  zoxide
 )
 
 case "$TAG" in
@@ -57,7 +54,7 @@ case "$TAG" in
     dnf5 -y copr disable gsauthof/dracut-sshd
     ;;
   silverblue)
-    dnf5 install --setopt=install_weak_deps=False -y "${LAYERED_PACKAGES[@]}" "${LAYERED_PACKAGES_SILVERBLUE[@]}"
+    dnf5 install --setopt=install_weak_deps=False -y "${LAYERED_PACKAGES[@]}"
     ;;
   *)
     echo "Unknown tag: $TAG" >&2
