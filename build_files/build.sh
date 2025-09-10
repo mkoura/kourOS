@@ -22,6 +22,7 @@ TAG="${1:?"Tag needs to be provided"}"
 LAYERED_PACKAGES=(
   ansible
   bat
+  expect
   fd-find
   foot
   fzf
