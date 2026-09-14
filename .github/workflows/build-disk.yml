@@ -54,7 +54,14 @@ concurrency:
 jobs:
   build:
     name: Build ${{ matrix.disk-type }}
-    runs-on: ${{ inputs.platform == 'arm64' && 'ubuntu-26.04-arm' || 'ubuntu-26.04' }}
+    # Deliberately 24.04 while the container builds run on 26.04. On 26.04
+    # bootc-image-builder's osbuild stage fails to set up its build root:
+    # chown returns EPERM across the tree and mounting /dev into it returns
+    # EACCES, as though the stage is not running as real root. podman's
+    # --privileged does disable AppArmor, SELinux and seccomp, so that is not
+    # the cause, and no bootc-image-builder issue reports it. 24.04 is the
+    # runner their GitHub Actions guidance is written against.
+    runs-on: ${{ inputs.platform == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
       matrix:
