@@ -178,6 +178,25 @@ jobs:
         id: build_image
         run: just build "$IMAGE_NAME" "$DEFAULT_TAG"
 
+      # NOT ENABLED - kept as a reminder that rechunking is an option.
+      #
+      # Rechunking splits the image so it isn't published as one huge layer.
+      # It doesn't make downloads faster, it makes updates smaller and
+      # resumable. The implementation is the 'ostree-rechunk' recipe in the
+      # Justfile, so it can be tried locally first:
+      #   just ostree-rechunk kouros laptop
+      #
+      # It belongs here, between the build and the tagging: rechunking
+      # rewrites the DEFAULT_TAG image in place, and "Apply build tags" below
+      # then points the alias tags at the rechunked result. Enabling it any
+      # later would leave the aliases on the un-rechunked image.
+      #
+      # Costs a full copy of the image on disk, so watch runner space.
+      #
+      # - name: Rechunk with rpm-ostree
+      #   if: steps.should_build_publish.outputs.should_build == 'true'
+      #   run: just ostree-rechunk "$IMAGE_NAME" "$DEFAULT_TAG"
+
       - name: Generate build tags
         if: steps.should_build_publish.outputs.should_build == 'true'
         id: build_tags
@@ -192,59 +211,6 @@ jobs:
         env:
           BUILD_TAGS: ${{ steps.build_tags.outputs.tags }}
         run: just tag-images "$IMAGE_NAME" "$DEFAULT_TAG" "$BUILD_TAGS"
-
-      # NOT ENABLED - kept as a reminder that rechunking is an option.
-      #
-      # Rechunking splits the image so it isn't published as one huge layer. It
-      # doesn't make downloads faster, it makes updates smaller and resumable.
-      #
-      # This is the approach upstream image-template moved to, replacing the
-      # older hhd-dev/rechunk action: rpm-ostree's 'compose build-chunked-oci',
-      # run out of the freshly built image itself (which ships rpm-ostree) and
-      # writing straight back into podman's container storage. Upstream drives
-      # it from their Justfile as 'just ostree-rechunk'; inlined here so the
-      # runner doesn't need just installed.
-      #
-      # Before enabling, note:
-      #  - build-chunked-oci writes one tag, so the alias tags have to be
-      #    re-pointed at the rechunked image afterwards (second step below).
-      #  - the base image must ship rpm-ostree. bluefin-dx and silverblue-main
-      #    both do.
-      #  - it makes a full copy of the image, so watch runner disk space.
-      #  - rechunking strips labels, which is why the re-tag step follows
-      #    rather than rebuilding metadata.
-      #
-      # You can enable it by uncommenting the following lines:
-      # - name: Rechunk with rpm-ostree
-      #   id: rechunk
-      #   if: steps.should_build_publish.outputs.should_build == 'true'
-      #   run: |
-      #     set -euo pipefail
-      #     GRAPHROOT="$(podman info --format '{{.Store.GraphRoot}}')"
-      #     podman run --rm --pull=never --privileged \
-      #       --mount=type=image,src="${IMAGE_NAME}:${DEFAULT_TAG}",target=/rpm-ostree \
-      #       --mount=type=bind,src="${GRAPHROOT}",target=/run/host-container-storage,rw \
-      #       --mount=type=tmpfs,target=/run/rpm-ostree-storage \
-      #       --entrypoint /usr/bin/rpm-ostree \
-      #       "localhost/${IMAGE_NAME}:${DEFAULT_TAG}" \
-      #       compose build-chunked-oci \
-      #       --max-layers 127 \
-      #       --format-version=2 \
-      #       --bootc \
-      #       --rootfs /rpm-ostree \
-      #       --output "containers-storage:[overlay@/run/host-container-storage+/run/rpm-ostree-storage]localhost/${IMAGE_NAME}:${DEFAULT_TAG}"
-      #
-      # - name: Re-apply alias tags to the rechunked image
-      #   if: steps.should_build_publish.outputs.should_build == 'true'
-      #   env:
-      #     ALIAS_TAGS: ${{ steps.build_tags.outputs.tags }}
-      #   run: |
-      #     set -euo pipefail
-      #     for tag in $ALIAS_TAGS; do
-      #       if [ "$tag" != "$DEFAULT_TAG" ]; then
-      #         podman tag "${IMAGE_NAME}:${DEFAULT_TAG}" "${IMAGE_NAME}:${tag}"
-      #       fi
-      #     done
 
       # These `if` statements are so that pull requests for your custom images do not make it publish any packages under your name without you knowing
       # They also check if the runner is on the default branch so that things like the merge queue (if you enable it), are going to work

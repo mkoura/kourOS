@@ -138,17 +138,41 @@ build $target_image=image_name $tag=default_tag:
         --file Containerfile.in \
         .
 
+# Split the image into more layers, for smaller and resumable updates
+[group('Utility')]
+ostree-rechunk $target_image=image_name $tag=default_tag:
+    #!/usr/bin/env bash
+    # Not wired into CI by default, see build_reusable.yml for where it would
+    # slot in. Runs rpm-ostree out of the image being rechunked, so the base
+    # image has to ship it; bluefin-dx and silverblue-main both do. Makes a
+    # full copy of the image, so watch disk space.
+    set -xeuo pipefail
+
+    GRAPHROOT="$(podman info --format '{{ '{{.Store.GraphRoot}}' }}')"
+
+    podman run --rm --pull=never --privileged \
+      --mount=type=image,src="${target_image}:${tag}",target=/rpm-ostree \
+      --mount=type=bind,src="${GRAPHROOT}",target=/run/host-container-storage,rw \
+      --mount=type=tmpfs,target=/run/rpm-ostree-storage \
+      --entrypoint /usr/bin/rpm-ostree \
+      "localhost/${target_image}:${tag}" \
+      compose build-chunked-oci \
+      --max-layers 127 \
+      --format-version=2 \
+      --bootc \
+      --rootfs /rpm-ostree \
+      --output "containers-storage:[overlay@/run/host-container-storage+/run/rpm-ostree-storage]localhost/${target_image}:${tag}"
+
 # Print the image name, so CI doesn't have to restate it
 [group('Utility')]
 image-name:
     @echo "{{ image_name }}"
 
-# Print the base image the given variant builds FROM.
-
-# CI uses this to decide whether the base image moved since the last build.
+# Print the base image the given variant builds FROM
 [group('Utility')]
 base-image $tag=default_tag:
     #!/usr/bin/env bash
+    # CI uses this to tell whether the base image moved since the last build.
     set -euo pipefail
     # Last match, so adding a ghcr-based helper stage above the base image
     # doesn't silently return the wrong one.
