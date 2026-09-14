@@ -1,6 +1,16 @@
-export image_name := env("IMAGE_NAME", "kouros")
-export default_tag := env("DEFAULT_TAG", "laptop")
-export bib_image := env("BIB_IMAGE", "quay.io/centos-bootc/bootc-image-builder:latest")
+# Config lives in kouros.env so the Justfile and CI cannot drift apart.
+# Real environment variables still win over the file, so CI can override.
+
+set dotenv-filename := "kouros.env"
+set dotenv-load := true
+
+export image_name := env_var("IMAGE_NAME")
+export repo_organization := env_var("REPO_ORGANIZATION")
+export image_desc := env_var("IMAGE_DESC")
+export image_keywords := env_var("IMAGE_KEYWORDS")
+export image_logo_url := env_var("IMAGE_LOGO_URL")
+export default_tag := env_var("DEFAULT_TAG")
+export bib_image := env_var("BIB_IMAGE")
 
 alias build-vm := build-qcow2
 alias rebuild-vm := rebuild-qcow2
@@ -89,19 +99,79 @@ sudoif command *args:
 build $target_image=image_name $tag=default_tag:
     #!/usr/bin/env bash
 
-    BUILD_ARGS=()
+    set -euo pipefail
+
+    # Selects the variant stanza in Containerfile.in. podman runs cpp itself,
+    # so there is no generated Containerfile to keep in sync.
+    BUILD_ARGS=("--cpp-flag=-DCPP_${tag}")
+
+    # Commit-specific URLs are only meaningful if the tree matches the commit.
+    LABELS=()
     if [[ -z "$(git status -s)" ]]; then
-        BUILD_ARGS+=("--build-arg" "SHA_HEAD_SHORT=$(git rev-parse --short HEAD)")
+        GIT_SHA="$(git rev-parse --short HEAD)"
+        LABELS+=("--label" "org.opencontainers.image.revision=${GIT_SHA}")
+        LABELS+=("--label" "io.artifacthub.package.readme-url=https://raw.githubusercontent.com/{{ repo_organization }}/{{ image_name }}/${GIT_SHA}/README.md")
+        LABELS+=("--label" "org.opencontainers.image.documentation=https://raw.githubusercontent.com/{{ repo_organization }}/{{ image_name }}/${GIT_SHA}/README.md")
+        LABELS+=("--label" "org.opencontainers.image.source=https://github.com/{{ repo_organization }}/{{ image_name }}/blob/${GIT_SHA}/Containerfile.in")
+        LABELS+=("--label" "org.opencontainers.image.url=https://github.com/{{ repo_organization }}/{{ image_name }}/tree/${GIT_SHA}")
     fi
 
-    BUILD_ARGS+=("--cpp-flag=-DCPP_${tag}")
+    # Image metadata for https://artifacthub.io/ - optional, but it is how
+    # custom images end up indexed.
+    LABELS+=("--label" "containers.bootc=1")
+    LABELS+=("--label" "io.artifacthub.package.deprecated=false")
+    LABELS+=("--label" "io.artifacthub.package.keywords={{ image_keywords }}")
+    LABELS+=("--label" "io.artifacthub.package.license=Apache-2.0")
+    LABELS+=("--label" "io.artifacthub.package.logo-url={{ image_logo_url }}")
+    LABELS+=("--label" "io.artifacthub.package.prerelease=false")
+    LABELS+=("--label" "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)")
+    LABELS+=("--label" "org.opencontainers.image.description={{ image_desc }}")
+    LABELS+=("--label" "org.opencontainers.image.title={{ image_name }}")
+    LABELS+=("--label" "org.opencontainers.image.vendor={{ repo_organization }}")
+    LABELS+=("--label" "org.opencontainers.image.version=${tag}.$(date +%Y%m%d)")
 
     podman build \
         "${BUILD_ARGS[@]}" \
+        "${LABELS[@]}" \
         --pull=newer \
         --tag "${target_image}:${tag}" \
         --file Containerfile.in \
         .
+
+# Print the image name, so CI doesn't have to restate it
+[group('Utility')]
+image-name:
+    @echo "{{ image_name }}"
+
+# Print the base image the given variant builds FROM.
+
+# CI uses this to decide whether the base image moved since the last build.
+[group('Utility')]
+base-image $tag=default_tag:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Last match, so adding a ghcr-based helper stage above the base image
+    # doesn't silently return the wrong one.
+    cpp -P -DCPP_"${tag}" Containerfile.in |
+        grep -E '^FROM ghcr\.io' | tail -n1 | awk '{print $2}'
+
+# Print the tags a build publishes: the variant, plus a dated variant
+[group('Utility')]
+generate-build-tags $tag=default_tag:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "${tag} ${tag}.$(date +%Y%m%d)"
+
+# Point additional tags at an already-built image
+[group('Utility')]
+tag-images $target_image=image_name $tag=default_tag tags="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    IMAGE="$(podman inspect "${target_image}:${tag}" | jq -r '.[].Id')"
+    for build_tag in {{ tags }}; do
+        podman tag "${IMAGE}" "${target_image}:${build_tag}"
+    done
+    podman images --filter reference="${target_image}"
 
 # Command: _rootful_load_image
 # Description: This script checks if the current user is root or running under sudo. If not, it attempts to resolve the image tag using podman inspect.
