@@ -168,6 +168,11 @@ ostree-rechunk $target_image=image_name $tag=default_tag:
 image-name:
     @echo "{{ image_name }}"
 
+# Print the bootc-image-builder image used for disk builds
+[group('Utility')]
+bib-image:
+    @echo "{{ bib_image }}"
+
 # Print the base image the given variant builds FROM
 [group('Utility')]
 base-image $tag=default_tag:
