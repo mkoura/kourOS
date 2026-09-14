@@ -15,8 +15,10 @@ env:
   DEFAULT_TAG: "${{ inputs.image_flavor || 'laptop' }}"
 
 concurrency:
-  group: ${{ inputs.image_flavor || 'laptop' }}-${{ github.ref || github.run_id }}-${{ inputs.image_flavor }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ inputs.image_flavor || 'laptop' }}-${{ github.ref }}
+  # Supersede PR builds, but never interrupt a run on the default branch: a
+  # cancel landing between push and sign would leave unsigned tags published.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build_push:
@@ -26,7 +28,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write
 
     steps:
       - name: Prepare environment
@@ -40,7 +41,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Preprocess Containerfile.in
-        run: cpp -P -DCPP_${{ env.DEFAULT_TAG }} Containerfile.in -o Containerfile
+        run: cpp -P -DCPP_"$DEFAULT_TAG" Containerfile.in -o Containerfile
 
       - name: Install skopeo and jq
         if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
@@ -54,64 +55,76 @@ jobs:
         if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         id: current_state
         run: |
-          git_commit="$(git rev-parse HEAD)"
-          echo "git_commit=$git_commit" >> $GITHUB_OUTPUT
+          # pipefail matters here: without it a skopeo failure is masked by the
+          # exit status of the jq it is piped into.
+          set -euo pipefail
 
-          base_image="$(grep -E '^FROM ghcr\.io' ./Containerfile | head -n1 | awk '{print $2}')"
+          git_commit="$(git rev-parse HEAD)"
+          echo "git_commit=$git_commit" >> "$GITHUB_OUTPUT"
+
+          # Take the last matching FROM. Picking the first would silently
+          # inspect the wrong image if a ghcr-based helper stage is ever added
+          # above the base image.
+          base_image="$(grep -E '^FROM ghcr\.io' ./Containerfile | tail -n1 | awk '{print $2}')"
           echo "Base image: $base_image"
 
-          ostree_commit=$(skopeo inspect "docker://$base_image" | jq -r '.Labels["org.centos.stream.ostree.commit"] // .Labels["ostree.commit"]')
-          echo "ostree_commit=$ostree_commit" >> $GITHUB_OUTPUT
-
-          # Build and push only when base ostree commit changed
-          echo "{\"base_commit\": \"$ostree_commit\"}" > .curr-base-commit.json
-          # Or build and push when either git commit or base ostree commit changed
-          # echo "{\"git_commit\": \"$git_commit\", \"base_commit\": \"$ostree_commit\"}" > .curr-base-commit.json
+          # '// empty' is load-bearing: plain 'jq -r' prints the literal string
+          # "null" for a missing label, which would sail past the check below
+          # and get cached as base_commit="null". That value never changes, so
+          # every later run would see "no base image change" and skip forever.
+          ostree_commit="$(skopeo inspect "docker://$base_image" |
+            jq -r '.Labels["org.centos.stream.ostree.commit"] // .Labels["ostree.commit"] // empty')"
 
           if [ -z "$ostree_commit" ]; then
             echo "❌ Failed to extract OSTree commit from base image: $base_image"
             exit 1
           fi
 
+          echo "ostree_commit=$ostree_commit" >> "$GITHUB_OUTPUT"
+
+          # INTENTIONAL: the cache key covers the base image only, not the git
+          # commit. Scheduled runs exist to pick up base image updates; edits
+          # made in this repo are published by triggering the build manually
+          # (workflow_dispatch always builds, see the decision step below).
+          # To also rebuild on every repo change, add git_commit to this file.
+          echo "{\"base_commit\": \"$ostree_commit\"}" > .curr-base-commit.json
+
       - name: Restore last build state
         if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         id: cache_restore
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .last-build-info.json
           key: build-state-${{ inputs.image_flavor || 'laptop' }}-${{ hashFiles('.curr-base-commit.json') }}
 
-      - name: Compare with last build state
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-        id: changes_check
-        run: |
-          if [ ! -f .last-build-info.json ]; then
-            exit 0
-          fi
-
-          # Git and ostree commits should be the same
-          LAST_GIT=$(jq -r .git_commit < .last-build-info.json)
-          LAST_BASE=$(jq -r .base_commit < .last-build-info.json)
-
-          echo "Last Git:  $LAST_GIT"
-          echo "Current:   ${{ steps.current_state.outputs.git_commit }}"
-          echo "Last Base: $LAST_BASE"
-          echo "Current:   ${{ steps.current_state.outputs.ostree_commit }}"
-
       - name: Check if skipping build and/or publish
         id: should_build_publish
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          CURRENT_GIT: ${{ steps.current_state.outputs.git_commit }}
+          CURRENT_BASE: ${{ steps.current_state.outputs.ostree_commit }}
         run: |
+          set -euo pipefail
+
           # Determine if we're on the default branch (and not a pull request).
           default_branch=false
-          if [ "${{ github.event_name }}" != "pull_request" ] && \
-             [ "${{ github.ref }}" = "refs/heads/${{ github.event.repository.default_branch }}" ]; then
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ] && \
+             [ "$GITHUB_REF" = "refs/heads/$DEFAULT_BRANCH" ]; then
             default_branch=true
+          fi
+
+          # Report the restored state against the current one.
+          if [ -f .last-build-info.json ]; then
+            echo "Last Git:  $(jq -r .git_commit < .last-build-info.json)"
+            echo "Current:   $CURRENT_GIT"
+            echo "Last Base: $(jq -r .base_commit < .last-build-info.json)"
+            echo "Current:   $CURRENT_BASE"
           fi
 
           # Decide whether to build.
 
           # Always build when triggered manually.
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             should_build=true
             echo "📦 Manual trigger detected – building."
           # Always build for pull requests or non-default branches.
@@ -124,7 +137,7 @@ jobs:
             echo "✅ No base image changes detected – skipping build."
           else
             should_build=true
-            echo "📦 Base image changed – building."
+            echo "📦 Base image changed, or no cached build state – building."
           fi
 
           echo "should_build=$should_build" >> "$GITHUB_OUTPUT"
@@ -176,13 +189,13 @@ jobs:
             type=sha,enable=${{ github.event_name == 'pull_request' }}
             type=ref,event=pr
           labels: |
-            io.artifacthub.package.readme-url=https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/refs/heads/main/README.md
+            io.artifacthub.package.readme-url=https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/${{ github.sha }}/README.md
             org.opencontainers.image.created=${{ steps.date.outputs.date }}
             org.opencontainers.image.description=${{ env.IMAGE_DESC }}
-            org.opencontainers.image.documentation=https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/refs/heads/main/README.md
-            org.opencontainers.image.source=https://github.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/blob/main/Containerfile
+            org.opencontainers.image.documentation=https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/${{ github.sha }}/README.md
+            org.opencontainers.image.source=https://github.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/blob/${{ github.sha }}/Containerfile.in
             org.opencontainers.image.title=${{ env.IMAGE_NAME }}
-            org.opencontainers.image.url=https://github.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+            org.opencontainers.image.url=https://github.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/tree/${{ github.sha }}
             org.opencontainers.image.vendor=${{ github.repository_owner }}
             org.opencontainers.image.version=${{ env.DEFAULT_TAG }}.{{date 'YYYYMMDD'}}
             io.artifacthub.package.deprecated=false
@@ -206,11 +219,20 @@ jobs:
           image: ${{ env.IMAGE_NAME }}
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
-          oci: false
+          oci: true
 
-      # Rechunk is a script that we use on Universal Blue to make sure there isnt a single huge layer when your image gets published.
-      # This does not make your image faster to download, just provides better resumability and fixes a few errors.
-      # Documentation for Rechunk is provided on their github repository at https://github.com/hhd-dev/rechunk
+      # NOT ENABLED - kept as a reminder that rechunking is an option.
+      #
+      # Rechunking splits the image so it isn't published as one huge layer. It
+      # doesn't make downloads faster, it makes updates smaller and resumable.
+      #
+      # The block below is the old hhd-dev/rechunk action, kept for reference.
+      # Note it references env.CENTOS_VERSION, which this workflow never sets,
+      # so it needs fixing before use. Upstream image-template has since moved
+      # to 'rpm-ostree compose build-chunked-oci' (and optionally coreos/chunkah)
+      # driven from the Justfile, which is the better starting point today:
+      # https://github.com/ublue-os/image-template -> 'just ostree-rechunk'
+      #
       # You can enable it by uncommenting the following lines:
       # - name: Run Rechunker
       #   id: rechunk
@@ -234,9 +256,12 @@ jobs:
 
       # These `if` statements are so that pull requests for your custom images do not make it publish any packages under your name without you knowing
       # They also check if the runner is on the default branch so that things like the merge queue (if you enable it), are going to work
+      # Required by the cosign step further down, not just by the push: cosign
+      # reads ~/.docker/config.json, which only this action writes.
+      # push-to-registry passes --creds straight to podman and persists nothing.
       - name: Login to GitHub Container Registry
         if: steps.should_build_publish.outputs.should_publish == 'true'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v3
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -269,20 +294,28 @@ jobs:
 
       - name: Sign container image
         if: steps.push.outcome == 'success'
-        run: |
-          IMAGE_FULL="${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}"
-          for tag in ${{ steps.metadata.outputs.tags }}; do
-            # https://github.com/containers/container-libs/issues/388
-            # https://github.com/coreos/rpm-ostree/issues/5509
-            # use old bundle format, so we can use newer cosign 3.X.X instead of 2.X.X
-            cosign sign -y --new-bundle-format=false --use-signing-config=false --key env://COSIGN_PRIVATE_KEY $IMAGE_FULL:$tag
-          done
         env:
-          TAGS: ${{ steps.push.outputs.digest }}
-          COSIGN_EXPERIMENTAL: false
           COSIGN_PRIVATE_KEY: ${{ secrets.SIGNING_SECRET }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          # Every tag resolves to this one manifest, so sign the digest once.
+          # Signing per tag would just attach duplicate signatures to the same
+          # digest, and re-resolving each tag risks racing a tag that moved.
+          #
+          # https://github.com/containers/container-libs/issues/388
+          # https://github.com/coreos/rpm-ostree/issues/5509
+          # use old bundle format, so we can use newer cosign 3.X.X instead of 2.X.X
+          cosign sign -y --new-bundle-format=false --use-signing-config=false \
+            --key env://COSIGN_PRIVATE_KEY "${IMAGE_REGISTRY}/${IMAGE_NAME}@${DIGEST}"
 
       - name: Save build input file
         if: steps.push.outcome == 'success'
+        env:
+          GIT_COMMIT: ${{ steps.current_state.outputs.git_commit }}
+          BASE_COMMIT: ${{ steps.current_state.outputs.ostree_commit }}
         run: |
-          echo '{"git_commit": "${{ steps.current_state.outputs.git_commit }}", "base_commit": "${{ steps.current_state.outputs.ostree_commit }}"}' > .last-build-info.json
+          set -euo pipefail
+          jq -n --arg git_commit "$GIT_COMMIT" --arg base_commit "$BASE_COMMIT" \
+            '{git_commit: $git_commit, base_commit: $base_commit}' > .last-build-info.json
