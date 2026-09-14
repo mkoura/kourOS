@@ -11,11 +11,11 @@ COPY system_files /system_files
 
 #if defined CPP_laptop
 #define TAG "laptop"
-FROM ghcr.io/ublue-os/bluefin-dx:gts
+FROM ghcr.io/ublue-os/bluefin-dx:stable
 
 #elif defined CPP_workstation
 #define TAG "workstation"
-FROM ghcr.io/ublue-os/bluefin-dx:gts
+FROM ghcr.io/ublue-os/bluefin-dx:stable
 
 #elif defined CPP_silverblue
 #define TAG "silverblue"
