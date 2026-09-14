@@ -24,6 +24,15 @@ on:
           - laptop
           - workstation
           - silverblue
+      disk-type:
+        description: "Disk image type"
+        required: true
+        type: choice
+        default: both
+        options:
+          - both
+          - anaconda-iso
+          - qcow2
   pull_request:
     branches:
       - main
@@ -44,12 +53,14 @@ concurrency:
 
 jobs:
   build:
-    name: Build disk images
-    runs-on: ${{ inputs.platform == 'amd64' && 'ubuntu-26.04' || 'ubuntu-26.04-arm' }}
+    name: Build ${{ matrix.disk-type }}
+    runs-on: ${{ inputs.platform == 'arm64' && 'ubuntu-26.04-arm' || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
       matrix:
-        disk-type: ["qcow2", "anaconda-iso"]
+        # A dispatch builds the selected type, or both. Pull requests have no
+        # input and get both, so a change to either config is still validated.
+        disk-type: ${{ fromJSON(inputs.disk-type == 'qcow2' && '["qcow2"]' || inputs.disk-type == 'anaconda-iso' && '["anaconda-iso"]' || '["qcow2","anaconda-iso"]') }}
     permissions:
       contents: read
       packages: read
@@ -58,15 +69,13 @@ jobs:
     steps:
       - name: Prepare environment
         run: |
-          USER_UID=$(id -u)
-          USER_GID=$(id -g)
-          # Concatenate the types with a hyphen
-          DISK_TYPE=$(echo "${{ matrix.disk-type }}" | tr ' ' '-')
-          # Lowercase the image uri
-          echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> ${GITHUB_ENV}
-          echo "DISK_TYPE=${DISK_TYPE}" >> ${GITHUB_ENV}
-          echo "USER_UID=${USER_UID}" >> ${GITHUB_ENV}
-          echo "USER_GID=${USER_GID}" >> ${GITHUB_ENV}
+          set -euo pipefail
+          {
+            # Lowercase the image uri
+            echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}"
+            echo "USER_UID=$(id -u)"
+            echo "USER_GID=$(id -g)"
+          } >> "${GITHUB_ENV}"
 
       - name: Install dependencies
         if: inputs.platform == 'arm64'
