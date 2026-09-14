@@ -16,6 +16,7 @@ export image_keywords := env_var("IMAGE_KEYWORDS")
 export image_logo_url := env_var("IMAGE_LOGO_URL")
 export default_tag := env_var("DEFAULT_TAG")
 export bib_image := env_var("BIB_IMAGE")
+export bib_rootfs := env_var("BIB_ROOTFS")
 
 alias build-vm := build-qcow2
 alias rebuild-vm := rebuild-qcow2
@@ -190,6 +191,11 @@ iso-config $tag=default_tag $registry=("ghcr.io/" + repo_organization):
 bib-image:
     @echo "{{ bib_image }}"
 
+# Print the root filesystem bootc-image-builder should use
+[group('Utility')]
+bib-rootfs:
+    @echo "{{ bib_rootfs }}"
+
 # Print the base image the given variant builds FROM
 [group('Utility')]
 base-image $tag=default_tag:
@@ -283,7 +289,7 @@ _build-bib $target_image $tag $type $config: (_rootful_load_image target_image t
 
     args="--type ${type} "
     args+="--use-librepo=True "
-    args+="--rootfs=btrfs"
+    args+="--rootfs=${bib_rootfs}"
 
     BUILDTMP=$(mktemp -p "${PWD}" -d -t _build-bib.XXXXXXXXXX)
 
