@@ -29,6 +29,7 @@ LAYERED_PACKAGES=(
   fd-find
   foot
   fzf
+  jq
   mc
   neovim
   nmap
@@ -65,6 +66,58 @@ case "$TAG" in
     exit 1
     ;;
 esac
+
+# }}}
+
+### Container signature verification {{{
+
+# CI signs every published image, but that is worth nothing unless the
+# installed system actually checks the signature. Teach it to, by pinning our
+# repo to our public key.
+#
+# Note the consequence: once this is in place, an image published without a
+# valid signature cannot be pulled by `bootc upgrade`.
+
+# shellcheck source=/dev/null
+. /ctx/kouros.env
+
+SIGNED_REPO="ghcr.io/${REPO_ORGANIZATION,,}/${IMAGE_NAME,,}"
+KEY_PATH="/etc/pki/containers/${IMAGE_NAME,,}.pub"
+POLICY="/etc/containers/policy.json"
+
+install -D -m 0644 /ctx/cosign.pub "$KEY_PATH"
+
+# cosign publishes signatures as sigstore attachments rather than as
+# traditional detached signatures, so they have to be looked for.
+install -d -m 0755 /etc/containers/registries.d
+cat > "/etc/containers/registries.d/${IMAGE_NAME,,}.yaml" <<EOF
+docker:
+  ${SIGNED_REPO}:
+    use-sigstore-attachments: true
+EOF
+
+# Merge into the base image's policy instead of replacing it: the base ships
+# its own entries for the ublue repos, and dropping those would stop the
+# machine from pulling its own parent image.
+if [ ! -f "$POLICY" ]; then
+  echo "Expected $POLICY in the base image, refusing to guess" >&2
+  exit 1
+fi
+
+POLICY_TMP="$(mktemp)"
+jq --arg repo "$SIGNED_REPO" --arg key "$KEY_PATH" '
+  .transports.docker[$repo] = [{
+    "type": "sigstoreSigned",
+    "keyPath": $key,
+    "signedIdentity": {"type": "matchRepository"}
+  }]
+' "$POLICY" > "$POLICY_TMP"
+
+# Never install a policy we cannot read back; an unparseable policy.json
+# blocks every image pull, including the recovery one.
+jq -e . "$POLICY_TMP" > /dev/null
+install -D -m 0644 "$POLICY_TMP" "$POLICY"
+rm -f "$POLICY_TMP"
 
 # }}}
 

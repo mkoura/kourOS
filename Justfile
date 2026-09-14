@@ -173,6 +173,18 @@ ostree-rechunk $target_image=image_name $tag=default_tag:
 image-name:
     @echo "{{ image_name }}"
 
+# Render the installer config for a variant, with the right update source
+[group('Utility')]
+iso-config $tag=default_tag $registry=("ghcr.io/" + repo_organization):
+    #!/usr/bin/env bash
+    # The kickstart %post repoints the installed system at the image it should
+    # pull updates from afterwards. That target is variant-specific, so this
+    # cannot be one static config file.
+    set -euo pipefail
+    sed "s|@IMAGE_REF@|${registry}/${image_name}:${tag}|" \
+        disk_config/iso.toml.in > disk_config/iso.generated.toml
+    echo "Installer will switch to: ${registry}/${image_name}:${tag}"
+
 # Print the bootc-image-builder image used for disk builds
 [group('Utility')]
 bib-image:
@@ -314,7 +326,7 @@ build-raw $target_image=("localhost/" + image_name) $tag=default_tag: && (_build
 
 # Build an ISO virtual machine image
 [group('Build Virtal Machine Image')]
-build-iso $target_image=("localhost/" + image_name) $tag=default_tag: && (_build-bib target_image tag "iso" "disk_config/iso.toml")
+build-iso $target_image=("localhost/" + image_name) $tag=default_tag: (iso-config tag) && (_build-bib target_image tag "iso" "disk_config/iso.generated.toml")
 
 # Rebuild a QCOW2 virtual machine image
 [group('Build Virtal Machine Image')]
@@ -326,7 +338,7 @@ rebuild-raw $target_image=("localhost/" + image_name) $tag=default_tag: && (_reb
 
 # Rebuild an ISO virtual machine image
 [group('Build Virtal Machine Image')]
-rebuild-iso $target_image=("localhost/" + image_name) $tag=default_tag: && (_rebuild-bib target_image tag "iso" "disk_config/iso.toml")
+rebuild-iso $target_image=("localhost/" + image_name) $tag=default_tag: (iso-config tag) && (_rebuild-bib target_image tag "iso" "disk_config/iso.generated.toml")
 
 # Run a virtual machine with the specified image type and configuration
 _run-vm $target_image $tag $type $config:
@@ -380,7 +392,7 @@ run-vm-raw $target_image=("localhost/" + image_name) $tag=default_tag: && (_run-
 
 # Run a virtual machine from an ISO
 [group('Run Virtal Machine')]
-run-vm-iso $target_image=("localhost/" + image_name) $tag=default_tag: && (_run-vm target_image tag "iso" "disk_config/iso.toml")
+run-vm-iso $target_image=("localhost/" + image_name) $tag=default_tag: (iso-config tag) && (_run-vm target_image tag "iso" "disk_config/iso.generated.toml")
 
 # Run a virtual machine using systemd-vmspawn
 [group('Run Virtal Machine')]
