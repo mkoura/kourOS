@@ -1,6 +1,8 @@
 FROM scratch AS ctx
 COPY build_files /
 COPY system_files /system_files
+COPY cosign.pub /cosign.pub
+COPY kouros.env /kouros.env
 
 /*
 # Here are more base images:
