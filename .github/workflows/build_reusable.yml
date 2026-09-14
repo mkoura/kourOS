@@ -7,10 +7,8 @@ on:
         type: string
 
 env:
-  IMAGE_DESC: "kourOS Customized Universal Blue Image"
-  IMAGE_KEYWORDS: "bootc,ublue,universal-blue,bluefin"
-  IMAGE_LOGO_URL: "https://avatars.githubusercontent.com/u/120078124?s=200&v=4"  # Put your own image here for a fancy profile on https://artifacthub.io/!
-  IMAGE_NAME: "${{ github.event.repository.name }}"  # Output image name, usually same as repo name
+  # Image name and metadata live in kouros.env, shared with the Justfile.
+  # IMAGE_NAME is resolved from there by the "Resolve image name" step.
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"  # Do not edit
   DEFAULT_TAG: "${{ inputs.image_flavor || 'laptop' }}"
 
@@ -33,18 +31,32 @@ jobs:
       - name: Prepare environment
         run: |
           # Lowercase the image uri
-          echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> ${GITHUB_ENV}
-          echo "IMAGE_NAME=${IMAGE_NAME,,}" >> ${GITHUB_ENV}
+          echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> "${GITHUB_ENV}"
 
       # These stage versions are pinned by https://github.com/renovatebot/renovate
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Preprocess Containerfile.in
-        run: cpp -P -DCPP_"$DEFAULT_TAG" Containerfile.in -o Containerfile
+      # The build lives in the Justfile so that 'just build' locally and a CI
+      # build produce the same image, labels and all.
+      - name: Install just
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
 
+      - name: Check Just syntax
+        run: just check
+
+      - name: Resolve image name
+        run: |
+          set -euo pipefail
+          # kouros.env is the single source of truth, shared with the Justfile.
+          IMAGE_NAME="$(just image-name)"
+          # ghcr.io rejects uppercase paths.
+          echo "IMAGE_NAME=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
+
+      # Unconditional: jq is needed by 'just tag-images' on every build, not
+      # only on the default branch. Both are usually preinstalled, so the
+      # guard below normally makes this a no-op.
       - name: Install skopeo and jq
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         run: |
           if ! { command -v jq && command -v skopeo; } >/dev/null 2>&1; then
             sudo apt-get update
@@ -62,10 +74,7 @@ jobs:
           git_commit="$(git rev-parse HEAD)"
           echo "git_commit=$git_commit" >> "$GITHUB_OUTPUT"
 
-          # Take the last matching FROM. Picking the first would silently
-          # inspect the wrong image if a ghcr-based helper stage is ever added
-          # above the base image.
-          base_image="$(grep -E '^FROM ghcr\.io' ./Containerfile | tail -n1 | awk '{print $2}')"
+          base_image="$(just base-image "$DEFAULT_TAG")"
           echo "Base image: $base_image"
 
           # '// empty' is load-bearing: plain 'jq -r' prints the literal string
@@ -164,115 +173,44 @@ jobs:
         if: steps.should_build_publish.outputs.should_build == 'true'
         uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6
 
-      - name: Get current date
-        if: steps.should_build_publish.outputs.should_build == 'true'
-        id: date
-        run: |
-          # This generates a timestamp like what is defined on the ArtifactHub documentation
-          # E.G: 2022-02-08T15:38:15Z'
-          # https://artifacthub.io/docs/topics/repositories/container-images/
-          # https://linux.die.net/man/1/date
-          echo "date=$(date -u +%Y\-%m\-%d\T%H\:%M\:%S\Z)" >> $GITHUB_OUTPUT
-
-      # Image metadata for https://artifacthub.io/ - This is optional but is highly recommended so we all can get a index of all the custom images
-      # The metadata by itself is not going to do anything, you choose if you want your image to be on ArtifactHub or not.
-      - name: Image Metadata
-        if: steps.should_build_publish.outputs.should_build == 'true'
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
-        id: metadata
-        with:
-          # This generates all the tags for your image, you can add custom tags here too!
-          # Default tags are "$DEFAULT_TAG" and "$DEFAULT_TAG.$date".
-          tags: |
-            type=raw,value=${{ env.DEFAULT_TAG }}
-            type=raw,value=${{ env.DEFAULT_TAG }}.{{date 'YYYYMMDD'}}
-            type=sha,enable=${{ github.event_name == 'pull_request' }}
-            type=ref,event=pr
-          labels: |
-            io.artifacthub.package.readme-url=https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/${{ github.sha }}/README.md
-            org.opencontainers.image.created=${{ steps.date.outputs.date }}
-            org.opencontainers.image.description=${{ env.IMAGE_DESC }}
-            org.opencontainers.image.documentation=https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/${{ github.sha }}/README.md
-            org.opencontainers.image.source=https://github.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/blob/${{ github.sha }}/Containerfile.in
-            org.opencontainers.image.title=${{ env.IMAGE_NAME }}
-            org.opencontainers.image.url=https://github.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/tree/${{ github.sha }}
-            org.opencontainers.image.vendor=${{ github.repository_owner }}
-            org.opencontainers.image.version=${{ env.DEFAULT_TAG }}.{{date 'YYYYMMDD'}}
-            io.artifacthub.package.deprecated=false
-            io.artifacthub.package.keywords=${{ env.IMAGE_KEYWORDS }}
-            io.artifacthub.package.license=Apache-2.0
-            io.artifacthub.package.logo-url=${{ env.IMAGE_LOGO_URL }}
-            io.artifacthub.package.prerelease=false
-            containers.bootc=1
-          sep-tags: " "
-          sep-annotations: " "
-
       - name: Build Image
         if: steps.should_build_publish.outputs.should_build == 'true'
         id: build_image
-        uses: redhat-actions/buildah-build@3a51aade9afa17e5c78256bcbe2e1ee08c7b995b # v3.0.2
-        with:
-          containerfiles: |
-            ./Containerfile
-          # Postfix image name with -custom to make it a little more descriptive
-          # Syntax: https://docs.github.com/en/actions/learn-github-actions/expressions#format
-          image: ${{ env.IMAGE_NAME }}
-          tags: ${{ steps.metadata.outputs.tags }}
-          labels: ${{ steps.metadata.outputs.labels }}
-          oci: true
+        run: just build "$IMAGE_NAME" "$DEFAULT_TAG"
 
       # NOT ENABLED - kept as a reminder that rechunking is an option.
       #
-      # Rechunking splits the image so it isn't published as one huge layer. It
-      # doesn't make downloads faster, it makes updates smaller and resumable.
+      # Rechunking splits the image so it isn't published as one huge layer.
+      # It doesn't make downloads faster, it makes updates smaller and
+      # resumable. The implementation is the 'ostree-rechunk' recipe in the
+      # Justfile, so it can be tried locally first:
+      #   just ostree-rechunk kouros laptop
       #
-      # This is the approach upstream image-template moved to, replacing the
-      # older hhd-dev/rechunk action: rpm-ostree's 'compose build-chunked-oci',
-      # run out of the freshly built image itself (which ships rpm-ostree) and
-      # writing straight back into podman's container storage. Upstream drives
-      # it from their Justfile as 'just ostree-rechunk'; inlined here so the
-      # runner doesn't need just installed.
+      # It belongs here, between the build and the tagging: rechunking
+      # rewrites the DEFAULT_TAG image in place, and "Apply build tags" below
+      # then points the alias tags at the rechunked result. Enabling it any
+      # later would leave the aliases on the un-rechunked image.
       #
-      # Before enabling, note:
-      #  - build-chunked-oci writes one tag, so the alias tags have to be
-      #    re-pointed at the rechunked image afterwards (second step below).
-      #  - the base image must ship rpm-ostree. bluefin-dx and silverblue-main
-      #    both do.
-      #  - it makes a full copy of the image, so watch runner disk space.
-      #  - rechunking strips labels, which is why the re-tag step follows
-      #    rather than rebuilding metadata.
+      # Costs a full copy of the image on disk, so watch runner space.
       #
-      # You can enable it by uncommenting the following lines:
       # - name: Rechunk with rpm-ostree
-      #   id: rechunk
       #   if: steps.should_build_publish.outputs.should_build == 'true'
-      #   run: |
-      #     set -euo pipefail
-      #     GRAPHROOT="$(podman info --format '{{.Store.GraphRoot}}')"
-      #     podman run --rm --pull=never --privileged \
-      #       --mount=type=image,src="${IMAGE_NAME}:${DEFAULT_TAG}",target=/rpm-ostree \
-      #       --mount=type=bind,src="${GRAPHROOT}",target=/run/host-container-storage,rw \
-      #       --mount=type=tmpfs,target=/run/rpm-ostree-storage \
-      #       --entrypoint /usr/bin/rpm-ostree \
-      #       "localhost/${IMAGE_NAME}:${DEFAULT_TAG}" \
-      #       compose build-chunked-oci \
-      #       --max-layers 127 \
-      #       --format-version=2 \
-      #       --bootc \
-      #       --rootfs /rpm-ostree \
-      #       --output "containers-storage:[overlay@/run/host-container-storage+/run/rpm-ostree-storage]localhost/${IMAGE_NAME}:${DEFAULT_TAG}"
-      #
-      # - name: Re-apply alias tags to the rechunked image
-      #   if: steps.should_build_publish.outputs.should_build == 'true'
-      #   env:
-      #     ALIAS_TAGS: ${{ steps.metadata.outputs.tags }}
-      #   run: |
-      #     set -euo pipefail
-      #     for tag in $ALIAS_TAGS; do
-      #       if [ "$tag" != "$DEFAULT_TAG" ]; then
-      #         podman tag "${IMAGE_NAME}:${DEFAULT_TAG}" "${IMAGE_NAME}:${tag}"
-      #       fi
-      #     done
+      #   run: just ostree-rechunk "$IMAGE_NAME" "$DEFAULT_TAG"
+
+      - name: Generate build tags
+        if: steps.should_build_publish.outputs.should_build == 'true'
+        id: build_tags
+        run: |
+          set -euo pipefail
+          tags="$(just generate-build-tags "$DEFAULT_TAG")"
+          echo "Tags for this build: $tags"
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+
+      - name: Apply build tags
+        if: steps.should_build_publish.outputs.should_build == 'true'
+        env:
+          BUILD_TAGS: ${{ steps.build_tags.outputs.tags }}
+        run: just tag-images "$IMAGE_NAME" "$DEFAULT_TAG" "$BUILD_TAGS"
 
       # These `if` statements are so that pull requests for your custom images do not make it publish any packages under your name without you knowing
       # They also check if the runner is on the default branch so that things like the merge queue (if you enable it), are going to work
@@ -297,7 +235,7 @@ jobs:
         with:
           registry: ${{ env.IMAGE_REGISTRY }}
           image: ${{ env.IMAGE_NAME }}
-          tags: ${{ steps.metadata.outputs.tags }}
+          tags: ${{ steps.build_tags.outputs.tags }}
           username: ${{ env.REGISTRY_USER }}
           password: ${{ env.REGISTRY_PASSWORD }}
 
