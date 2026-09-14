@@ -3,3 +3,5 @@ _build_*
 output
 _build-*/**
 *.swp
+*_chunkah_*
+*_rpm-ostree_*

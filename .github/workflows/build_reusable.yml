@@ -37,7 +37,7 @@ jobs:
 
       # These stage versions are pinned by https://github.com/renovatebot/renovate
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Preprocess Containerfile.in
         run: cpp -P -DCPP_${{ env.DEFAULT_TAG }} Containerfile.in -o Containerfile
@@ -153,10 +153,6 @@ jobs:
         with:
           remove-codeql: true
 
-      - name: Mount BTRFS for podman storage
-        if: steps.should_build_publish.outputs.should_build == 'true'
-        uses: ublue-os/container-storage-action@main
-
       - name: Get current date
         if: steps.should_build_publish.outputs.should_build == 'true'
         id: date
@@ -269,13 +265,19 @@ jobs:
       - name: Install Cosign
         if: steps.push.outcome == 'success'
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          # be careful when upgrading major versions
+          cosign-release: 'v3.1.2'
 
       - name: Sign container image
         if: steps.push.outcome == 'success'
         run: |
           IMAGE_FULL="${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}"
           for tag in ${{ steps.metadata.outputs.tags }}; do
-            cosign sign -y --key env://COSIGN_PRIVATE_KEY $IMAGE_FULL:$tag
+            # https://github.com/containers/container-libs/issues/388
+            # https://github.com/coreos/rpm-ostree/issues/5509
+            # use old bundle format, so we can use newer cosign 3.X.X instead of 2.X.X
+            cosign sign -y --new-bundle-format=false --use-signing-config=false --key env://COSIGN_PRIVATE_KEY $IMAGE_FULL:$tag
           done
         env:
           TAGS: ${{ steps.push.outputs.digest }}

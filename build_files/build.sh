@@ -5,6 +5,9 @@ set -ouex pipefail
 
 TAG="${1:?"Tag needs to be provided"}"
 
+# Copy the contents of system_files/ of the git repo to /
+cp -avf "/ctx/system_files"/. /
+
 ### Install packages {{{
 
 # Packages can be installed from any enabled yum repo on the image.
@@ -62,8 +65,6 @@ case "$TAG" in
     exit 1
     ;;
 esac
-
-ostree container commit
 
 # }}}
 
