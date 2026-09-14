@@ -1,5 +1,6 @@
 FROM scratch AS ctx
 COPY build_files /
+COPY system_files /system_files
 
 /*
 # Here are more base images:
@@ -24,12 +25,25 @@ FROM ghcr.io/ublue-os/silverblue-main:latest
 #error "Unknown tag"
 #endif
 
+/*
+### [IM]MUTABLE /opt
+# Some bootable images, like Fedora, have /opt symlinked to /var/opt, in order to
+# make it mutable/writable for users. However, some packages write files to this directory,
+# thus its contents might be wiped out when bootc deploys an image, making it troublesome for
+# some packages. Eg, google-chrome, docker-desktop.
+#
+# To make /opt immutable and usable by the package manager, move the RUN line below
+# out of this comment block. Note that '#' cannot be used to comment it out, because
+# this file is run through cpp, which would read it as a preprocessor directive.
+
+RUN rm /opt && mkdir /opt
+*/
+
 RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=cache,dst=/var/cache \
     --mount=type=cache,dst=/var/log \
     --mount=type=tmpfs,dst=/tmp \
-    /ctx/build.sh TAG && \
-    ostree container commit
+    /ctx/build.sh TAG
 
 /*
 # Verify final image and contents are correct.
