@@ -1,8 +1,13 @@
 # Config lives in kouros.env so the Justfile and CI cannot drift apart.
 # Real environment variables still win over the file, so CI can override.
+#
+# Setting dotenv-filename already implies dotenv-load, so do not add an
+# explicit 'set dotenv-load'. just's formatter disagrees with itself about
+# how to spell it (1.47 rewrites it to ':= true', 1.58 rewrites it back to
+# the bare form), so either spelling makes 'just check' fail on the other
+# version. Omitting it is the only spelling both accept.
 
 set dotenv-filename := "kouros.env"
-set dotenv-load := true
 
 export image_name := env_var("IMAGE_NAME")
 export repo_organization := env_var("REPO_ORGANIZATION")
