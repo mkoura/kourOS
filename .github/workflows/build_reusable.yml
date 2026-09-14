@@ -226,32 +226,52 @@ jobs:
       # Rechunking splits the image so it isn't published as one huge layer. It
       # doesn't make downloads faster, it makes updates smaller and resumable.
       #
-      # The block below is the old hhd-dev/rechunk action, kept for reference.
-      # Note it references env.CENTOS_VERSION, which this workflow never sets,
-      # so it needs fixing before use. Upstream image-template has since moved
-      # to 'rpm-ostree compose build-chunked-oci' (and optionally coreos/chunkah)
-      # driven from the Justfile, which is the better starting point today:
-      # https://github.com/ublue-os/image-template -> 'just ostree-rechunk'
+      # This is the approach upstream image-template moved to, replacing the
+      # older hhd-dev/rechunk action: rpm-ostree's 'compose build-chunked-oci',
+      # run out of the freshly built image itself (which ships rpm-ostree) and
+      # writing straight back into podman's container storage. Upstream drives
+      # it from their Justfile as 'just ostree-rechunk'; inlined here so the
+      # runner doesn't need just installed.
+      #
+      # Before enabling, note:
+      #  - build-chunked-oci writes one tag, so the alias tags have to be
+      #    re-pointed at the rechunked image afterwards (second step below).
+      #  - the base image must ship rpm-ostree. bluefin-dx and silverblue-main
+      #    both do.
+      #  - it makes a full copy of the image, so watch runner disk space.
+      #  - rechunking strips labels, which is why the re-tag step follows
+      #    rather than rebuilding metadata.
       #
       # You can enable it by uncommenting the following lines:
-      # - name: Run Rechunker
+      # - name: Rechunk with rpm-ostree
       #   id: rechunk
-      #   uses: hhd-dev/rechunk@f153348d8100c1f504dec435460a0d7baf11a9d2 # v1.1.1
-      #   with:
-      #     rechunk: 'ghcr.io/hhd-dev/rechunk:v1.0.1'
-      #     ref: "localhost/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}"
-      #     prev-ref: "${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}"
-      #     skip_compression: true
-      #     version: ${{ env.CENTOS_VERSION }}
-      #     labels: ${{ steps.metadata.outputs.labels }} # Rechunk strips out all the labels during build, this needs to be reapplied here with newline separator
-
-      # This is necessary so that the podman socket can find the rechunked image on its storage
-      # - name: Load in podman and tag
+      #   if: steps.should_build_publish.outputs.should_build == 'true'
       #   run: |
-      #     IMAGE=$(podman pull ${{ steps.rechunk.outputs.ref }})
-      #     sudo rm -rf ${{ steps.rechunk.outputs.output }}
-      #     for tag in ${{ steps.metadata.outputs.tags }}; do
-      #       podman tag $IMAGE ${{ env.IMAGE_NAME }}:$tag
+      #     set -euo pipefail
+      #     GRAPHROOT="$(podman info --format '{{.Store.GraphRoot}}')"
+      #     podman run --rm --pull=never --privileged \
+      #       --mount=type=image,src="${IMAGE_NAME}:${DEFAULT_TAG}",target=/rpm-ostree \
+      #       --mount=type=bind,src="${GRAPHROOT}",target=/run/host-container-storage,rw \
+      #       --mount=type=tmpfs,target=/run/rpm-ostree-storage \
+      #       --entrypoint /usr/bin/rpm-ostree \
+      #       "localhost/${IMAGE_NAME}:${DEFAULT_TAG}" \
+      #       compose build-chunked-oci \
+      #       --max-layers 127 \
+      #       --format-version=2 \
+      #       --bootc \
+      #       --rootfs /rpm-ostree \
+      #       --output "containers-storage:[overlay@/run/host-container-storage+/run/rpm-ostree-storage]localhost/${IMAGE_NAME}:${DEFAULT_TAG}"
+      #
+      # - name: Re-apply alias tags to the rechunked image
+      #   if: steps.should_build_publish.outputs.should_build == 'true'
+      #   env:
+      #     ALIAS_TAGS: ${{ steps.metadata.outputs.tags }}
+      #   run: |
+      #     set -euo pipefail
+      #     for tag in $ALIAS_TAGS; do
+      #       if [ "$tag" != "$DEFAULT_TAG" ]; then
+      #         podman tag "${IMAGE_NAME}:${DEFAULT_TAG}" "${IMAGE_NAME}:${tag}"
+      #       fi
       #     done
 
       # These `if` statements are so that pull requests for your custom images do not make it publish any packages under your name without you knowing
