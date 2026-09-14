@@ -5,3 +5,6 @@ _build-*/**
 *.swp
 *_chunkah_*
 *_rpm-ostree_*
+/Containerfile
+.curr-base-commit.json
+.last-build-info.json

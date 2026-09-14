@@ -9,9 +9,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   packages: write
-  id-token: write
 
 jobs:
   build_image:
