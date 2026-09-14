@@ -144,7 +144,18 @@ jobs:
           RCLONE_CONFIG_S3_REGION: ${{ secrets.S3_REGION }}
           RCLONE_CONFIG_S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
           SOURCE_DIR: ${{ steps.build.outputs.output-directory }}
+          S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
         run: |
+          set -euo pipefail
+
+          # Fail loudly rather than copying to a bucketless "S3:" target if
+          # the secret was never configured.
+          if [ -z "${S3_BUCKET_NAME}" ]; then
+            echo "S3_BUCKET_NAME secret is not set" >&2
+            exit 1
+          fi
+
           sudo apt-get update
           sudo apt-get install -y rclone
-          rclone copy $SOURCE_DIR S3:${{ secrets.S3_BUCKET_NAME }}
+
+          rclone copy "${SOURCE_DIR}" "S3:${S3_BUCKET_NAME}"
