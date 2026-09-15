@@ -31,6 +31,7 @@ LAYERED_PACKAGES=(
   fzf
   jq
   mc
+  mosh
   neovim
   nmap
   papirus-icon-theme
