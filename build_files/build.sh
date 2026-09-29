@@ -55,9 +55,7 @@ case "$TAG" in
     dnf5 install --setopt=install_weak_deps=False -y "${LAYERED_PACKAGES[@]}" "${LAYERED_PACKAGES_LAPTOP[@]}"
     ;;
   workstation)
-    dnf5 -y copr enable gsauthof/dracut-sshd
     dnf5 install --setopt=install_weak_deps=False -y "${LAYERED_PACKAGES[@]}" "${LAYERED_PACKAGES_WORKSTATION[@]}"
-    dnf5 -y copr disable gsauthof/dracut-sshd
     ;;
   silverblue)
     dnf5 install --setopt=install_weak_deps=False -y "${LAYERED_PACKAGES[@]}"
