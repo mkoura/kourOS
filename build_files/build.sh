@@ -35,6 +35,9 @@ LAYERED_PACKAGES=(
   neovim
   nmap
   papirus-icon-theme
+  ripgrep
+  stow
+  strace
   tcpdump
   tmux
   wireshark
