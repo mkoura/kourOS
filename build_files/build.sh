@@ -36,6 +36,7 @@ LAYERED_PACKAGES=(
   nmap
   papirus-icon-theme
   ripgrep
+  smbios-utils
   stow
   strace
   tcpdump
